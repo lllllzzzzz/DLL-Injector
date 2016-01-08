@@ -69,7 +69,7 @@ void setupProcessList(HWND hwnd)
 BOOL updateProcessList(HWND hwnd)
 {
     if (!hwnd) {
-        return;
+        return FALSE;
     }
 
     LockWindowUpdate(hwnd);
