@@ -26,7 +26,6 @@
 #define SHOW_SUCCESS(msg)               MessageBox(NULL, msg, "DLL Injector", MB_ICONASTERISK | MB_OK);
 #define IS_CHECKED(id)                  (SendDlgItemMessage(hwndDlg, id, BM_GETCHECK, (WPARAM) 0, (LPARAM) 0))
 
-// Globals
 HINSTANCE   g_hInst;
 HWND        g_hProcessList;
 HWND        g_hMain;
@@ -42,6 +41,10 @@ char*       g_dllPath;
    ------------------------------------------------- */
 void setupProcessList(HWND hwnd)
 {
+    if (!hwnd) {
+        return;
+    }
+
     char imageNameTitle[] = "Image Name";
     char pidTitle[]       = "PID";
 
@@ -65,6 +68,10 @@ void setupProcessList(HWND hwnd)
    -------------------------------- */
 BOOL updateProcessList(HWND hwnd)
 {
+    if (!hwnd) {
+        return;
+    }
+
     LockWindowUpdate(hwnd);
 
     LVITEM LvItem;
@@ -116,6 +123,10 @@ BOOL updateProcessList(HWND hwnd)
    -------------------------------------------- */
 int getTargetProcessId(HWND hwnd, char *targetProcessId)
 {
+    if (!hwnd || !targetProcessId) {
+        return 0;
+    }
+
     // Iterate over process list to locate PID
     DWORD dwSelectedItem = SendMessage(hwnd, LVM_GETNEXTITEM, (WPARAM) -1, (LPARAM) LVNI_SELECTED);
     while (dwSelectedItem == -1) {
@@ -143,6 +154,10 @@ int getTargetProcessId(HWND hwnd, char *targetProcessId)
    --------------------------------------- */
 char* getDllPath(HWND hwndMain)
 {
+    if (!hwndMain) {
+        return NULL;
+    }
+
     char* dllPath = (char*) calloc(MAX_PATH, sizeof (char));
     OPENFILENAME ofn;
 
@@ -167,6 +182,10 @@ char* getDllPath(HWND hwndMain)
    ---------------------------------------------------------------------------- */
 BOOL injectDll(DWORD targetProcessId, char *g_dllPath)
 {
+    if (!targetProcessId || !g_dllPath) {
+        return FALSE;
+    }
+
     // Obtain handle of target process
     HANDLE hProcess = OpenProcess(PROCESS_CREATE_THREAD |
         PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE |
@@ -240,6 +259,10 @@ BOOL injectDll(DWORD targetProcessId, char *g_dllPath)
    -------------------------------------------------------------------------- */
 BOOL hookDll(DWORD targetProcessId, char *g_dllPath)
 {
+    if (!targetProcessId || !g_dllPath) {
+        return FALSE;
+    }
+
     // This function contains bugs, doesn't work!
 
     HMODULE hDll = LoadLibrary(g_dllPath);
@@ -266,13 +289,14 @@ BOOL hookDll(DWORD targetProcessId, char *g_dllPath)
     UnhookWindowsHookEx(hDllHook);
     FreeLibrary(hDll);
 }
+
 /* ---------------------------------------------------------------------------
    Check if running on Windows NT.
    This function is called to enable/disable the install function hook option.
    --------------------------------------------------------------------------- */
 BOOL isWindowsNT()
 {
-   DWORD dwVersion      = GetVersion();
+   DWORD dwVersion = GetVersion();
    //DWORD dwMajorVersion = (DWORD) (LOBYTE(LOWORD(dwVersion)));
    //DWORD dwMinorVersion = (DWORD) (HIBYTE(LOWORD(dwVersion)));
    return (dwVersion < 0x80000000);
@@ -399,7 +423,6 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
     }
     return FALSE;
 }
-
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
