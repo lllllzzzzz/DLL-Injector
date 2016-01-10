@@ -45,8 +45,8 @@ void setupProcessList(HWND hwnd)
         return;
     }
 
-    char imageNameTitle[] = "Image Name";
-    char pidTitle[]       = "PID";
+    const char *imageNameTitle = "Image Name";
+    const char *pidTitle       = "PID";
 
     LVCOLUMN LvCol;
     ZeroMemory(&LvCol, sizeof (LVCOLUMN));
@@ -158,15 +158,18 @@ char* getDllPath(HWND hwndMain)
         return NULL;
     }
 
-    char* dllPath = (char*) calloc(MAX_PATH, sizeof (char));
+    const char *filter = "Dynamic Linked Libraries\0*.dll*\0";
+    const char *title  = "Select DLL";
+
+    char* dllPath = calloc(MAX_PATH, 1);
     OPENFILENAME ofn;
 
     ZeroMemory(&ofn, sizeof (OPENFILENAME));
     ofn.lStructSize = sizeof (OPENFILENAME);
     ofn.hwndOwner   = hwndMain;
-    ofn.lpstrFilter = "Dynamic Linked Libraries\0*.dll*\0";
+    ofn.lpstrFilter = filter;
     ofn.lpstrFile   = dllPath;
-    ofn.lpstrTitle  = "Select DLL";
+    ofn.lpstrTitle  = title;
     ofn.nMaxFile    = MAX_PATH;
     ofn.Flags       = OFN_EXPLORER | OFN_FILEMUSTEXIST;
 
@@ -320,7 +323,7 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     PAINTSTRUCT ps;
     HDC hdc;
-    g_dllPath = (char*) calloc(MAX_PATH, sizeof(char));
+    g_dllPath = calloc(MAX_PATH, 1);
 
     switch(uMsg) {
     case WM_INITDIALOG:
