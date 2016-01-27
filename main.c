@@ -2,38 +2,33 @@
 #include <commctrl.h>
 #include <stdio.h>
 #include <tlhelp32.h>
+#include <assert.h>
 #include "resource.h"
 
 //#define _WIN32_WINNT                    0x0300
 
-#define LVM_SETEXTENDEDLISTVIEWSTYLE    (LVM_FIRST + 54)
-#define LVS_EX_GRIDLINES                0x00000001
-#define LVS_EX_SUBITEMIMAGES            0x00000002
-#define LVS_EX_CHECKBOXES               0x00000004
-#define LVS_EX_TRACKSELECT              0x00000008
-#define LVS_EX_HEADERDRAGDROP           0x00000010
-#define LVS_EX_FULLROWSELECT            0x00000020
-#define LVS_EX_ONECLICKACTIVATE         0x00000040
-#define LVS_EX_TWOCLICKACTIVATE         0x00000080
-#define LVS_EX_DOUBLEBUFFER             0x00010000
+#define LVM_SETEXTENDEDLISTVIEWSTYLE (LVM_FIRST + 54)
+#define LVS_EX_GRIDLINES             0x00000001
+#define LVS_EX_SUBITEMIMAGES         0x00000002
+#define LVS_EX_CHECKBOXES            0x00000004
+#define LVS_EX_TRACKSELECT           0x00000008
+#define LVS_EX_HEADERDRAGDROP        0x00000010
+#define LVS_EX_FULLROWSELECT         0x00000020
+#define LVS_EX_ONECLICKACTIVATE      0x00000040
+#define LVS_EX_TWOCLICKACTIVATE      0x00000080
+#define LVS_EX_DOUBLEBUFFER          0x00010000
 
-#define UPDATE_PERIOD                   1000
-#define REMOTE_THREAD_INJECTION         1
-#define INSTALL_FUNCTION_HOOK           2
-#define IMAGE_NAME_WIDTH                254
-#define PID_WIDTH                       40
-#define SHOW_ERROR(msg)                 MessageBox(NULL, msg, "Error", MB_ICONERROR | MB_OK);
-#define SHOW_SUCCESS(msg)               MessageBox(NULL, msg, "DLL Injector", MB_ICONASTERISK | MB_OK);
-#define IS_CHECKED(id)                  (SendDlgItemMessage(hwndDlg, id, BM_GETCHECK, (WPARAM) 0, (LPARAM) 0))
+#define UPDATE_PERIOD                1000
+#define REMOTE_THREAD_INJECTION      1
+#define INSTALL_FUNCTION_HOOK        2
+#define SHOW_SUCCESS(msg)            MessageBox(NULL, msg, "DLL Injector", MB_ICONASTERISK | MB_OK);
+#define SHOW_ERROR(msg)              MessageBox(NULL, msg, "Error", MB_ICONERROR | MB_OK);
+#define IS_CHECKED(id)               (SendDlgItemMessage(hwndDlg, id, BM_GETCHECK, (WPARAM) 0, (LPARAM) 0))
 
-HINSTANCE   g_hInst;
-HWND        g_hProcessList;
-HWND        g_hMain;
-MMRESULT    g_timerEvent;
-BOOL        g_isAutoRefreshEnabled = TRUE;
-int         g_injectMethod = REMOTE_THREAD_INJECTION;
-char        g_szBuffer[MAX_PATH];
-char*       g_dllPath;
+HWND  g_hMain; // Global required, accessed from timerCallback()
+BOOL  g_isAutoRefreshEnabled = TRUE;
+int   g_injectMethod = REMOTE_THREAD_INJECTION;
+char* g_dllPath = NULL;
 
 /* -------------------------------------------------
    Set up list of active processes.
@@ -41,25 +36,25 @@ char*       g_dllPath;
    ------------------------------------------------- */
 void setupProcessList(HWND hwnd)
 {
-    if (!hwnd) {
-        return;
-    }
+    assert(hwnd);
 
-    const char *imageNameTitle = "Image Name";
-    const char *pidTitle       = "PID";
+    static const char *IMAGE_NAME_TITLE = "Image Name";
+    static const char *PROCESS_ID_TITLE = "PID";
+    static const int IMAGE_NAME_WIDTH   = 254;
+    static const int PROCESS_ID_WIDTH   = 40;
 
     LVCOLUMN LvCol;
-    ZeroMemory(&LvCol, sizeof (LVCOLUMN));
+    ZeroMemory(&LvCol, sizeof(LVCOLUMN));
     LvCol.mask = LVCF_TEXT | LVCF_WIDTH | LVCF_SUBITEM;
 
     SendMessage(hwnd, LVM_SETEXTENDEDLISTVIEWSTYLE, 0, LVS_EX_FULLROWSELECT | LVS_EX_DOUBLEBUFFER | LVS_EX_GRIDLINES);
 
-    LvCol.pszText = imageNameTitle;
+    LvCol.pszText = IMAGE_NAME_TITLE;
     LvCol.cx      = IMAGE_NAME_WIDTH;
     SendMessage(hwnd, LVM_INSERTCOLUMN, 0, (LPARAM) &LvCol);
 
-    LvCol.pszText = pidTitle;
-    LvCol.cx      = PID_WIDTH;
+    LvCol.pszText = PROCESS_ID_TITLE;
+    LvCol.cx      = PROCESS_ID_WIDTH;
     SendMessage(hwnd, LVM_INSERTCOLUMN, 1, (LPARAM) &LvCol);
 }
 
@@ -68,28 +63,28 @@ void setupProcessList(HWND hwnd)
    -------------------------------- */
 BOOL updateProcessList(HWND hwnd)
 {
-    if (!hwnd) {
-        return FALSE;
-    }
+    assert(hwnd);
+
+    static const int PROCESS_ID_BUFFER_SIZE = 5;
 
     LockWindowUpdate(hwnd);
 
     LVITEM LvItem;
-    memset(&LvItem, 0, sizeof (LVITEM));
+    memset(&LvItem, 0, sizeof(LVITEM));
     LvItem.mask = LVIF_TEXT;
     LvItem.cchTextMax = 256;
     LvItem.iItem = 0;
 
     PROCESSENTRY32 entry;
-    entry.dwSize = sizeof (PROCESSENTRY32);
+    entry.dwSize = sizeof(PROCESSENTRY32);
 
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (!snapshot) {
         return FALSE;
     }
 
-    char *tmp = (char*) calloc(5, sizeof (char));
-    if (!tmp) {
+    char *pidBuffer = calloc(PROCESS_ID_BUFFER_SIZE, 1);
+    if (!pidBuffer) {
         CloseHandle(snapshot);
         return FALSE;
     }
@@ -106,13 +101,13 @@ BOOL updateProcessList(HWND hwnd)
 
             // Process ID
             LvItem.iSubItem = 1;
-            sprintf(tmp, "%lu", entry.th32ProcessID);
-            LvItem.pszText = tmp;
+            sprintf(pidBuffer, "%lu", entry.th32ProcessID);
+            LvItem.pszText = pidBuffer;
             SendMessage(hwnd, LVM_SETITEM, 0, (LPARAM) &LvItem);
         }
     }
 
-    free(tmp);
+    free(pidBuffer);
     CloseHandle(snapshot);
     //ListView_SetItemState(hwnd, 0, LVIS_FOCUSED | LVIS_SELECTED, 0x000F);
     LockWindowUpdate(NULL);
@@ -123,9 +118,10 @@ BOOL updateProcessList(HWND hwnd)
    -------------------------------------------- */
 int getTargetProcessId(HWND hwnd, char *targetProcessId)
 {
-    if (!hwnd || !targetProcessId) {
-        return 0;
-    }
+    assert(hwnd);
+    assert(targetProcessId);
+
+    static const int PROCESS_ID_LENGTH = 5;
 
     // Iterate over process list to locate PID
     DWORD dwSelectedItem = SendMessage(hwnd, LVM_GETNEXTITEM, (WPARAM) -1, (LPARAM) LVNI_SELECTED);
@@ -138,11 +134,11 @@ int getTargetProcessId(HWND hwnd, char *targetProcessId)
     }
 
     LVITEM LvItem;
-    LvItem.mask         = LVIF_TEXT;
-    LvItem.iItem        = dwSelectedItem;
-    LvItem.iSubItem     = 1;
-    LvItem.pszText      = targetProcessId;
-    LvItem.cchTextMax   = 5;
+    LvItem.mask       = LVIF_TEXT;
+    LvItem.iItem      = dwSelectedItem;
+    LvItem.iSubItem   = 1;
+    LvItem.pszText    = targetProcessId;
+    LvItem.cchTextMax = PROCESS_ID_LENGTH;
 
     SendMessage(hwnd, LVM_GETITEM, (WPARAM) 0, (LPARAM) &LvItem);
 
@@ -154,26 +150,21 @@ int getTargetProcessId(HWND hwnd, char *targetProcessId)
    --------------------------------------- */
 char* getDllPath(HWND hwndMain)
 {
-    if (!hwndMain) {
-        return NULL;
-    }
-
-    const char *filter = "Dynamic Linked Libraries\0*.dll*\0";
-    const char *title  = "Select DLL";
+    assert(hwndMain);
 
     char* dllPath = calloc(MAX_PATH, 1);
-    OPENFILENAME ofn;
+    assert(dllPath);
 
-    ZeroMemory(&ofn, sizeof (OPENFILENAME));
-    ofn.lStructSize = sizeof (OPENFILENAME);
+    OPENFILENAME ofn;
+    ZeroMemory(&ofn, sizeof(OPENFILENAME));
+    ofn.lStructSize = sizeof(OPENFILENAME);
     ofn.hwndOwner   = hwndMain;
-    ofn.lpstrFilter = filter;
+    ofn.lpstrFilter = "Dynamic Linked Libraries\0*.dll*\0";
     ofn.lpstrFile   = dllPath;
-    ofn.lpstrTitle  = title;
+    ofn.lpstrTitle  = "Select DLL";
     ofn.nMaxFile    = MAX_PATH;
     ofn.Flags       = OFN_EXPLORER | OFN_FILEMUSTEXIST;
 
-    ZeroMemory(g_dllPath, sizeof (dllPath));
     GetOpenFileName(&ofn);
 
     return dllPath;
@@ -185,9 +176,7 @@ char* getDllPath(HWND hwndMain)
    ---------------------------------------------------------------------------- */
 BOOL injectDll(DWORD targetProcessId, char *g_dllPath)
 {
-    if (!targetProcessId || !g_dllPath) {
-        return FALSE;
-    }
+    assert(g_dllPath);
 
     // Obtain handle of target process
     HANDLE hProcess = OpenProcess(PROCESS_CREATE_THREAD |
@@ -262,9 +251,7 @@ BOOL injectDll(DWORD targetProcessId, char *g_dllPath)
    -------------------------------------------------------------------------- */
 BOOL hookDll(DWORD targetProcessId, char *g_dllPath)
 {
-    if (!targetProcessId || !g_dllPath) {
-        return FALSE;
-    }
+    assert(g_dllPath);
 
     // This function contains bugs, doesn't work!
 
@@ -322,7 +309,7 @@ void CALLBACK timerCallback(UINT uID, UINT uMsg, DWORD dwUser, DWORD dw1, DWORD 
 BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 {
     PAINTSTRUCT ps;
-    HDC hdc;
+    //HDC hdc;
     g_dllPath = calloc(MAX_PATH, 1);
 
     switch(uMsg) {
@@ -340,8 +327,8 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
         SendDlgItemMessage(hwndDlg, IDC_AUTO_REFRESH, BM_SETCHECK, (WPARAM) BST_CHECKED, (LPARAM) 0);
 
         // Set up timer/process list
-        g_hMain      = GetDlgItem(hwndDlg, IDC_PROCESS_LIST);
-        g_timerEvent = timeSetEvent(UPDATE_PERIOD, 0, timerCallback, 0, TIME_PERIODIC);
+        g_hMain = GetDlgItem(hwndDlg, IDC_PROCESS_LIST);
+        //MMRESULT g_timerEvent = timeSetEvent(UPDATE_PERIOD, 0, timerCallback, 0, TIME_PERIODIC);
         setupProcessList(GetDlgItem(hwndDlg, IDC_PROCESS_LIST));
         updateProcessList(GetDlgItem(hwndDlg, IDC_PROCESS_LIST));
     }
@@ -374,13 +361,12 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
             case IDC_INJECT_DLL:
                 {
-                    int targetProcessId = getTargetProcessId(GetDlgItem(hwndDlg, IDC_PROCESS_LIST), g_szBuffer);
+                    char filePath[MAX_PATH] = {0};
+                    int targetProcessId = getTargetProcessId(GetDlgItem(hwndDlg, IDC_PROCESS_LIST), filePath);
                     if (g_injectMethod == REMOTE_THREAD_INJECTION) {
-                        // Use DLL injection method
                         injectDll(targetProcessId, g_dllPath);
                     } else if (g_injectMethod == INSTALL_FUNCTION_HOOK) {
-                        // Use function hook method
-                        hookDll(getTargetProcessId(GetDlgItem(hwndDlg, IDC_PROCESS_LIST), g_szBuffer), g_dllPath);
+                        hookDll(getTargetProcessId(GetDlgItem(hwndDlg, IDC_PROCESS_LIST), filePath), g_dllPath);
                     }
                 }
                 break;
@@ -410,7 +396,7 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 //                } else {
 //                    g_isAutoRefreshEnabled = FALSE;
 //                }
-                g_isAutoRefreshEnabled = (IS_CHECKED(IDC_AUTO_REFRESH)) ? TRUE : FALSE;
+                g_isAutoRefreshEnabled = IS_CHECKED(IDC_AUTO_REFRESH);
                 break;
 
             case IDC_REMOTE_THREAD_INJECTION:
@@ -429,7 +415,7 @@ BOOL CALLBACK DlgMain(HWND hwndDlg, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
 int APIENTRY WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nShowCmd)
 {
-    g_hInst = hInstance;
+    HINSTANCE g_hInst = hInstance;
     InitCommonControls();
     return DialogBox(hInstance, MAKEINTRESOURCE(IDD_DIALOG1), NULL, (DLGPROC) DlgMain);
 }
